@@ -3,19 +3,15 @@ import { NextResponse } from "next/server"
 export async function POST(request: Request) {
   try {
     let data = await request.json()
-    console.log("Original data:", data)
+    // Log the received data for debugging
+    console.log("Received data:", data)
 
-    // Preprocess the data to handle NaN values - this approach aligns with your ML model's preprocessing
-    if (data && typeof data === 'object') {
-      // Process input data to ensure no NaN values
-      data = preprocessInputData(data)
-    }
-
-    console.log("Processed data:", data)
+    // Clean NaN values from the data
+    data = cleanInputData(data)
+    console.log("Cleaned data:", data)
 
     // Forward the request to your FastAPI backend
     const apiUrl = process.env.FASTAPI_API_URL || "http://localhost:8000/predict"
-    
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
@@ -25,11 +21,11 @@ export async function POST(request: Request) {
     })
     
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`FastAPI error: ${response.status} - ${errorText}`)
+      const errorResponse = await response.text()
+      console.error(`FastAPI error: ${response.status}`, errorResponse)
       return NextResponse.json({ 
-        error: "Prediction failed", 
-        details: errorText 
+        error: "Failed to process prediction request", 
+        details: errorResponse 
       }, { status: response.status })
     }
     
@@ -39,35 +35,56 @@ export async function POST(request: Request) {
     console.error("Error in predict-rainfall API route:", error)
     return NextResponse.json({ 
       error: "Failed to process prediction request",
-      details: error instanceof Error ? error.message : String(error)
+      details: error instanceof Error ? error.message : "Unknown error"
     }, { status: 500 })
   }
 }
 
-function preprocessInputData(data: any) {
-  // Make a deep copy of the data to avoid modifying the original
-  const processedData = JSON.parse(JSON.stringify(data))
-  
-  // Replace any NaN, undefined, null or empty string with 0
-  for (const key in processedData) {
-    const value = processedData[key]
-    
-    // Handle null, undefined, or NaN values
-    if (value === null || value === undefined || 
-        (typeof value === 'number' && isNaN(value)) ||
-        (typeof value === 'string' && (value.toLowerCase() === 'nan' || value.trim() === ''))) {
-      processedData[key] = 0
-    } 
-    // Ensure numeric strings are converted to numbers
-    else if (typeof value === 'string' && !isNaN(Number(value))) {
-      processedData[key] = Number(value)
+// Function to clean NaN values from input data
+function cleanInputData(data: any): any {
+  // If data is null or undefined, return default object
+  if (data === null || data === undefined) {
+    return {}
+  }
+
+  // If data is an array, clean each item
+  if (Array.isArray(data)) {
+    return data.map(item => cleanInputData(item))
+  }
+
+  // If data is not an object, check for NaN
+  if (typeof data !== 'object') {
+    // Handle NaN values
+    if (typeof data === 'number' && isNaN(data)) {
+      return 0 // Replace NaN with 0
     }
-    // Handle other string values that might need special processing based on your model
-    else if (typeof value === 'string') {
-      // Keep string values as is - your FastAPI endpoint might handle categorical variables
-      processedData[key] = value
+    // Handle 'NaN' strings
+    if (typeof data === 'string' && (data.toLowerCase() === 'nan' || data === '')) {
+      return 0
+    }
+    return data
+  }
+
+  // Handle object - create a new object with cleaned values
+  const cleanedData: Record<string, any> = {}
+  
+  for (const key in data) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      const value = data[key]
+      
+      // Handle NaN, null, undefined values
+      if (value === null || value === undefined || 
+          (typeof value === 'number' && isNaN(value)) ||
+          (typeof value === 'string' && (value.toLowerCase() === 'nan' || value === ''))) {
+        cleanedData[key] = 0 // Replace with 0
+      } else if (typeof value === 'object') {
+        // Recursively clean nested objects
+        cleanedData[key] = cleanInputData(value)
+      } else {
+        cleanedData[key] = value
+      }
     }
   }
   
-  return processedData
+  return cleanedData
 }

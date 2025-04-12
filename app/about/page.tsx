@@ -1,4 +1,4 @@
-import { CloudRain, Database, LineChart, MapPin } from "lucide-react"
+import { CloudRain, Database, LineChart, MapPin, CloudLightning, Droplets } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -38,14 +38,24 @@ export default function AboutPage() {
               <div className="mt-1 h-2 w-2 rounded-full bg-sky-500" />
               <p>Seasonal indicators (Spring, Summer, Monsoon, Autumn, Winter)</p>
             </li>
+            <li className="flex items-start gap-2">
+              <div className="mt-1 h-2 w-2 rounded-full bg-sky-500" />
+              <p>Current day rainfall status (RainToday)</p>
+            </li>
           </ul>
 
-          <h2 className="text-2xl font-bold">The Technology</h2>
-          <p className="text-muted-foreground">
-            Our prediction system uses machine learning algorithms to analyze historical rainfall patterns and predict
-            future rainfall. The model has been trained on years of weather data from across India, allowing it to
-            recognize regional patterns and seasonal variations.
-          </p>
+          <div className="rounded-lg bg-gradient-to-r from-sky-50 to-blue-50 p-6 dark:from-sky-950 dark:to-blue-950">
+            <h3 className="text-xl font-bold mb-4">The Science Behind Our Predictions</h3>
+            <p className="text-muted-foreground mb-4">
+              Our prediction system uses machine learning algorithms to analyze historical rainfall patterns and predict
+              future rainfall. The model has been trained on years of weather data from across India, allowing it to
+              recognize regional patterns and seasonal variations.
+            </p>
+            <p className="text-muted-foreground">
+              By analyzing the relationship between current conditions and next-day rainfall across different regions
+              and seasons, our model can provide accurate predictions tailored to your specific location in India.
+            </p>
+          </div>
 
           <div className="mt-6">
             <Link href="/predict">
@@ -57,7 +67,7 @@ export default function AboutPage() {
           </div>
         </div>
 
-        <div className="grid gap-4">
+        <div className="space-y-6">
           <Card>
             <CardHeader className="flex flex-row items-center gap-4">
               <Database className="h-8 w-8 text-sky-500" />
@@ -105,18 +115,64 @@ export default function AboutPage() {
               </p>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-4">
+              <CloudLightning className="h-8 w-8 text-sky-500" />
+              <div>
+                <CardTitle>Seasonal Awareness</CardTitle>
+                <CardDescription>Adapts to India's unique seasonal patterns</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Our model understands the distinct seasonal patterns across India, from the Southwest Monsoon that
+                brings heavy rainfall to most of the country, to the Northeast Monsoon that affects Tamil Nadu and parts
+                of Andhra Pradesh.
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      <div className="mt-12 rounded-lg bg-sky-50 p-8 dark:bg-sky-950">
-        <div className="mx-auto max-w-3xl text-center">
-          <h2 className="text-2xl font-bold">Understanding Indian Rainfall Patterns</h2>
-          <p className="mt-4 text-muted-foreground">
-            India's rainfall patterns are complex and varied, influenced by the monsoon system, geographical features,
-            and seasonal changes. Our prediction model takes into account these unique characteristics to provide
-            accurate forecasts for each region.
-          </p>
-          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mt-12 rounded-lg bg-gradient-to-r from-sky-100 to-blue-100 p-8 dark:from-sky-900 dark:to-blue-900">
+        <div className="mx-auto max-w-3xl">
+          <h2 className="text-2xl font-bold text-center mb-6">Understanding Indian Rainfall Patterns</h2>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <div>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Droplets className="h-5 w-5 text-sky-600" />
+                <span>Monsoon Dominance</span>
+              </h3>
+              <p className="text-muted-foreground mb-4">
+                India's climate is dominated by the monsoon system, which brings about 80% of the country's annual
+                rainfall during the four-month period from June to September.
+              </p>
+              <p className="text-muted-foreground">
+                The Southwest Monsoon begins in Kerala in early June and gradually advances northward, covering the
+                entire country by mid-July. The retreat begins in September and continues through October.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-sky-600" />
+                <span>Regional Variations</span>
+              </h3>
+              <p className="text-muted-foreground mb-4">
+                Rainfall distribution across India varies dramatically. The northeastern states and the western coast
+                receive heavy rainfall (often exceeding 3,000mm annually), while western Rajasthan receives minimal
+                precipitation (less than 500mm annually).
+              </p>
+              <p className="text-muted-foreground">
+                These regional variations are captured in our dataset through the 36 meteorological subdivisions,
+                allowing our model to provide localized predictions.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-8 grid grid-cols-5 gap-4">
             <div className="text-center">
               <div className="text-3xl font-bold text-sky-600">36</div>
               <div className="text-sm text-muted-foreground">Subdivisions</div>
@@ -128,6 +184,10 @@ export default function AboutPage() {
             <div className="text-center">
               <div className="text-3xl font-bold text-sky-600">5</div>
               <div className="text-sm text-muted-foreground">Seasonal periods</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-sky-600">4</div>
+              <div className="text-sm text-muted-foreground">Seasonal aggregates</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-sky-600">85%</div>

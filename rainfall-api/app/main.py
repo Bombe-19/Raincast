@@ -4,6 +4,7 @@ import uvicorn
 import os
 from app.models.prediction import PredictionInput, PredictionOutput
 from app.services.ml_model import MLModelService
+from app.utils.data import get_rainfall_statistics
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -32,7 +33,7 @@ async def startup_event():
 @app.get("/")
 def read_root():
     """Root endpoint"""
-    return {"message": "Welcome to the Rainfall Prediction API"}
+    return {"message": "Welcome to the Rainfall Prediction API for India"}
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict_rainfall(input_data: PredictionInput):
@@ -46,12 +47,39 @@ def predict_rainfall(input_data: PredictionInput):
         # Make prediction
         prediction = ml_service.predict(features)
         
+        # Get regional information
+        regional_info = None
+        for key, value in input_data.dict().items():
+            if key.startswith('SUBDIVISION_') and value == 1:
+                subdivision = key.replace('SUBDIVISION_', '')
+                regional_info = ml_service.get_regional_info(subdivision)
+                break
+        
+        # Determine confidence level
+        confidence = "Medium"
+        if prediction > 0.8 or prediction < 0.2:
+            confidence = "High"
+        elif prediction > 0.65 or prediction < 0.35:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+        
         return PredictionOutput(
             prediction=float(prediction),
-            input_data=input_data
+            input_data=input_data,
+            confidence=confidence,
+            regional_info=regional_info
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/stats")
+def get_statistics():
+    """Get general rainfall statistics for India"""
+    stats = get_rainfall_statistics()
+    if stats is None:
+        raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
+    return stats
 
 @app.get("/health")
 def health_check():

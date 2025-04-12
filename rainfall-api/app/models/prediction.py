@@ -5,9 +5,10 @@ class PredictionInput(BaseModel):
     """
     Input data model for rainfall prediction
     
-    Note: This is a simplified model. You'll need to adjust it to match all columns in your dataset.
+    This model matches the columns in your dataset
     """
     YEAR: int = Field(..., description="Year")
+    
     # Monthly rainfall fields (can be None if not provided)
     JAN: Optional[float] = Field(None, description="January rainfall")
     FEB: Optional[float] = Field(None, description="February rainfall")
@@ -21,6 +22,18 @@ class PredictionInput(BaseModel):
     OCT: Optional[float] = Field(None, description="October rainfall")
     NOV: Optional[float] = Field(None, description="November rainfall")
     DEC: Optional[float] = Field(None, description="December rainfall")
+    
+    # Seasonal aggregates
+    Jan_Feb: Optional[float] = Field(None, description="January-February rainfall")
+    Mar_May: Optional[float] = Field(None, description="March-May rainfall")
+    Jun_Sep: Optional[float] = Field(None, description="June-September rainfall")
+    Oct_Dec: Optional[float] = Field(None, description="October-December rainfall")
+    
+    # Annual rainfall
+    ANNUAL: Optional[float] = Field(None, description="Annual rainfall")
+    
+    # Current rain status
+    RainToday: Optional[int] = Field(None, description="Whether it's raining today (1) or not (0)")
     
     # Seasonal indicators
     SPRING: Optional[int] = Field(0, description="Spring season indicator")
@@ -67,9 +80,6 @@ class PredictionInput(BaseModel):
     SUBDIVISION_WEST_RAJASTHAN: Optional[int] = Field(0)
     SUBDIVISION_WEST_UTTAR_PRADESH: Optional[int] = Field(0)
     
-    # Additional fields that might be needed
-    AvgMonthlyRainfall: Optional[float] = Field(None)
-    
     class Config:
         schema_extra = {
             "example": {
@@ -77,7 +87,7 @@ class PredictionInput(BaseModel):
                 "JUN": 150.5,
                 "MONSOON": 1,
                 "SUBDIVISION_KERALA": 1,
-                "AvgMonthlyRainfall": 120.5
+                "RainToday": 1
             }
         }
 
@@ -85,3 +95,5 @@ class PredictionOutput(BaseModel):
     """Output data model for rainfall prediction"""
     prediction: float = Field(..., description="Probability of rain tomorrow (0-1)")
     input_data: PredictionInput = Field(..., description="Input data used for prediction")
+    confidence: Optional[str] = Field("Medium", description="Confidence level of the prediction (Low, Medium, High)")
+    regional_info: Optional[Dict[str, Any]] = Field(None, description="Additional regional information")
