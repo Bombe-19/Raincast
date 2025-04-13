@@ -1,4 +1,4 @@
-![alt text](/public/images/rui.png)
+![UI](/public/images/rui.png)
 
 # Raincast
 Raincast is a web-based platform that predicts rainfall patterns based on regional, and seasonal data using machine learning models. Built with **Next.js (frontend)** and **FastAPI (backend)**, it uses a historical rainfall dataset to deliver accurate rainfall predictions for different subdivisions of India.
@@ -40,5 +40,16 @@ cd raincast
 npm install
 npm run dev
 ```
+### `.env`
+
+```bash
+Backend
+FASTAPI_API_URL=" "
+Frontend
+CORS_ORIGINS=[" "]
+```
+> Run Frontend and backend at the same time 
+
+
 
 
