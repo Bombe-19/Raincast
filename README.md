@@ -20,6 +20,9 @@ Raincast is a web-based platform that predicts rainfall patterns based on region
   - Seasonal indicators (Monsoon, Summer, Winter, etc.)
   - Monthly rainfall data (JAN–DEC)
 
+## Result
+![Result](/public/images/res.png)
+
 ## Setup Instructions
 
 ### 1. Clone the repository
