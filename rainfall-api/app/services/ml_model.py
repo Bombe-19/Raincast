@@ -6,21 +6,29 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.impute import SimpleImputer
 from app.models.prediction import PredictionInput
 from app.utils.data import load_dataset
 
 class MLModelService:
-    def __init__(self, model_path="./models/xgboost_model(1).pkl"):
+    def __init__(self, model_path="./models/xgboost_model.joblib"):
         self.model_path = model_path
         self.model = None
         self.scaler = None
+        self.imputer = None
         self.feature_columns = None
         self.feature_importances = None
         self.regional_stats = None
+        self.dataset = None
     
     def load_model(self):
         """Load the trained model or train a new one if it doesn't exist"""
         try:
+            # First, load the dataset for potential imputer fitting
+            self.dataset = load_dataset()
+            if self.dataset is None or self.dataset.empty:
+                raise Exception("Failed to load dataset or dataset is empty")
+            
             if os.path.exists(self.model_path):
                 print(f"Loading model from {self.model_path}")
                 model_data = joblib.load(self.model_path)
@@ -29,30 +37,64 @@ class MLModelService:
                 self.feature_columns = model_data["feature_columns"]
                 self.feature_importances = model_data.get("feature_importances", None)
                 self.regional_stats = model_data.get("regional_stats", None)
+                
+                # Check if imputer exists in the saved model
+                if "imputer" in model_data and model_data["imputer"] is not None:
+                    self.imputer = model_data["imputer"]
+                    print("Loaded imputer from model file")
+                else:
+                    # Create and fit a new imputer if not in the saved model
+                    print("Imputer not found in model file. Creating and fitting a new one.")
+                    self._create_and_fit_imputer()
             else:
                 print("Model not found. Training a new model...")
                 self.train_model()
         except Exception as e:
             print(f"Error loading model: {e}")
-            self.train_model()
+            import traceback
+            traceback.print_exc()
+            # Try to train a new model if loading fails
+            try:
+                self.train_model()
+            except Exception as train_error:
+                print(f"Error training new model: {train_error}")
+                traceback.print_exc()
+                raise
+    
+    def _create_and_fit_imputer(self):
+        """Create and fit a new imputer using the loaded dataset"""
+        try:
+            if self.dataset is None or self.dataset.empty:
+                raise Exception("Dataset not available for fitting imputer")
+            
+            # Get features (all columns except target)
+            X = self.dataset.drop(["PredictedRainTomorrow"], axis=1, errors='ignore')
+            
+            # Create and fit the imputer
+            self.imputer = SimpleImputer(strategy='mean')
+            self.imputer.fit(X)
+            print("Successfully created and fitted new imputer")
+        except Exception as e:
+            print(f"Error creating and fitting imputer: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     def train_model(self):
         """Train a new model using the dataset"""
-        # Load the dataset
-        df = load_dataset()
+        # Load the dataset if not already loaded
+        if self.dataset is None or self.dataset.empty:
+            self.dataset = load_dataset()
         
-        if df is None or df.empty:
+        if self.dataset is None or self.dataset.empty:
             raise Exception("Failed to load dataset or dataset is empty")
         
-        # Handle missing values in the training data
-        df = df.fillna(0)
-        
         # Calculate regional statistics for later use
-        self.regional_stats = self._calculate_regional_stats(df)
+        self.regional_stats = self._calculate_regional_stats(self.dataset)
         
         # Prepare features and target
-        X = df.drop(["PredictedRainTomorrow"], axis=1, errors='ignore')
-        y = df["PredictedRainTomorrow"]
+        X = self.dataset.drop(["PredictedRainTomorrow"], axis=1, errors='ignore')
+        y = self.dataset["PredictedRainTomorrow"]
         
         # Store feature columns for prediction
         self.feature_columns = X.columns.tolist()
@@ -60,10 +102,15 @@ class MLModelService:
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
+        # Create and fit imputer for handling missing values
+        self.imputer = SimpleImputer(strategy='mean')
+        X_train_imputed = self.imputer.fit_transform(X_train)
+        X_test_imputed = self.imputer.transform(X_test)
+        
         # Scale features
         self.scaler = StandardScaler()
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        X_test_scaled = self.scaler.transform(X_test)
+        X_train_scaled = self.scaler.fit_transform(X_train_imputed)
+        X_test_scaled = self.scaler.transform(X_test_imputed)
         
         # Train model
         self.model = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -90,6 +137,7 @@ class MLModelService:
         joblib.dump({
             "model": self.model,
             "scaler": self.scaler,
+            "imputer": self.imputer,
             "feature_columns": self.feature_columns,
             "feature_importances": self.feature_importances,
             "regional_stats": self.regional_stats
@@ -119,37 +167,59 @@ class MLModelService:
     
     def preprocess_input(self, input_data: PredictionInput):
         """Convert input data to a format the model can use"""
+        # Ensure imputer is available
+        if self.imputer is None:
+            print("Imputer not available. Creating and fitting a new one.")
+            self._create_and_fit_imputer()
+        
         # Convert input to dictionary
         input_dict = input_data.dict()
         
         # Create a DataFrame with a single row
         input_df = pd.DataFrame([input_dict])
         
+        # Print the columns in input_df for debugging
+        print("Input columns:", input_df.columns.tolist())
+        print("Feature columns:", self.feature_columns)
+        
         # Ensure all feature columns are present
         for col in self.feature_columns:
             if col not in input_df.columns:
+                print(f"Adding missing column: {col}")
                 input_df[col] = 0
         
-        # Select only the columns used during training
+        # Select only the columns used during training and in the same order
         input_df = input_df[self.feature_columns]
         
-        # Handle NaN values in the input data
-        input_df = input_df.fillna(0)
-        
-        # Handle string 'NaN' values and empty strings
-        for col in input_df.columns:
-            # Convert 'NaN', 'nan', empty strings, etc. to numeric 0
-            input_df[col] = input_df[col].apply(
-                lambda x: 0 if (isinstance(x, str) and x.lower() in ['nan', 'null', '']) else x
-            )
-            
-        # Double-check for any remaining NaN values
+        # Check for NaN values before imputation
         if input_df.isna().any().any():
-            print("Warning: NaN values found after conversion, filling with zeros")
+            print("Warning: NaN values detected in input data before imputation")
+            print("NaN columns:", input_df.columns[input_df.isna().any()].tolist())
+        
+        # Fill missing values using the imputer
+        try:
+            # Convert to numpy array without column names to avoid feature name mismatch
+            input_array = input_df.values
+            input_imputed = self.imputer.transform(input_array)
+        except Exception as e:
+            print(f"Error during imputation: {e}")
+            # Fallback: replace NaN with 0
             input_df = input_df.fillna(0)
+            input_array = input_df.values
+            input_imputed = input_array
         
         # Scale the features
-        input_scaled = self.scaler.transform(input_df)
+        try:
+            input_scaled = self.scaler.transform(input_imputed)
+        except Exception as e:
+            print(f"Error during scaling: {e}")
+            # Fallback: use the array as is
+            input_scaled = input_imputed
+        
+        # Final check for NaN values and replace them
+        if np.isnan(input_scaled).any():
+            print("Warning: NaN values detected after preprocessing")
+            input_scaled = np.nan_to_num(input_scaled, nan=0.0)
         
         return input_scaled
     
@@ -179,3 +249,9 @@ class MLModelService:
             return None
         
         return self.feature_importances.get(feature_name, 0)
+    
+    def calculate_annual_rainfall(self, monthly_values):
+        """Calculate annual rainfall from monthly values"""
+        # Sum all monthly values
+        annual = sum(value for value in monthly_values.values() if value is not None)
+        return annual

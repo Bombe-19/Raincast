@@ -1,13 +1,16 @@
 "use client"
 
+import React from "react"
+
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { CloudRain, Calendar, MapPin, BarChart, Umbrella, CloudLightning } from "lucide-react"
+import { CloudRain, Calendar, MapPin, BarChart, Umbrella, CloudLightning, Droplets } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -114,22 +117,99 @@ const SUBDIVISION_GROUPS = {
 const currentYear = new Date().getFullYear()
 const years = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i)
 
+// Define default monthly rainfall values based on region and season
+const getDefaultMonthlyRainfall = (subdivision: string) => {
+  // High rainfall regions
+  if (["KERALA", "COASTAL KARNATAKA", "KONKAN & GOA", "ASSAM & MEGHALAYA"].includes(subdivision)) {
+    return {
+      JAN: 20.5,
+      FEB: 25.3,
+      MAR: 40.2,
+      APR: 110.5,
+      MAY: 200.3,
+      JUN: 650.8,
+      JUL: 850.2,
+      AUG: 750.5,
+      SEP: 350.2,
+      OCT: 250.5,
+      NOV: 150.3,
+      DEC: 50.2,
+    }
+  }
+  // Moderate rainfall regions
+  else if (["TAMIL NADU", "COASTAL ANDHRA PRADESH", "GANGETIC WEST BENGAL"].includes(subdivision)) {
+    return {
+      JAN: 15.2,
+      FEB: 20.1,
+      MAR: 25.3,
+      APR: 50.2,
+      MAY: 100.5,
+      JUN: 150.3,
+      JUL: 200.5,
+      AUG: 180.2,
+      SEP: 150.5,
+      OCT: 200.3,
+      NOV: 180.5,
+      DEC: 40.2,
+    }
+  }
+  // Low rainfall regions
+  else {
+    return {
+      JAN: 5.2,
+      FEB: 8.1,
+      MAR: 10.3,
+      APR: 15.2,
+      MAY: 25.5,
+      JUN: 50.3,
+      JUL: 80.5,
+      AUG: 70.2,
+      SEP: 40.5,
+      OCT: 20.3,
+      NOV: 10.5,
+      DEC: 5.2,
+    }
+  }
+}
+
 const formSchema = z.object({
   year: z.number().min(1900).max(2100),
   month: z.string().min(1),
   subdivision: z.string().min(1),
   season: z.string().min(1),
   rainToday: z.string(),
+  // Add monthly rainfall fields
+  monthlyRainfall: z
+    .object({
+      JAN: z.number().optional(),
+      FEB: z.number().optional(),
+      MAR: z.number().optional(),
+      APR: z.number().optional(),
+      MAY: z.number().optional(),
+      JUN: z.number().optional(),
+      JUL: z.number().optional(),
+      AUG: z.number().optional(),
+      SEP: z.number().optional(),
+      OCT: z.number().optional(),
+      NOV: z.number().optional(),
+      DEC: z.number().optional(),
+    })
+    .optional(),
 })
 
 export default function PredictPage() {
   const { toast } = useToast()
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
-  const [prediction, setPrediction] = useState<null | { willRain: boolean; probability: number; confidence: string }>(
-    null,
-  )
+  const [prediction, setPrediction] = useState<null | {
+    willRain: boolean
+    probability: number
+    confidence: string
+    annualRainfall?: number
+  }>(null)
   const [activeTab, setActiveTab] = useState("basic")
+  const [showRainfallInputs, setShowRainfallInputs] = useState(false)
+  const [calculatedAnnual, setCalculatedAnnual] = useState<number | null>(null)
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -139,35 +219,104 @@ export default function PredictPage() {
       subdivision: "KERALA",
       season: "MONSOON",
       rainToday: "yes",
+      monthlyRainfall: getDefaultMonthlyRainfall("KERALA"),
     },
   })
+
+  // Watch for subdivision changes to update default rainfall values
+  const currentSubdivision = form.watch("subdivision")
+
+  // Calculate annual rainfall from monthly values
+  const calculateAnnualRainfall = () => {
+    const monthlyValues = form.getValues("monthlyRainfall")
+    if (!monthlyValues) return 0
+
+    let annual = 0
+    Object.values(monthlyValues).forEach((value) => {
+      if (value && !isNaN(value)) {
+        annual += value
+      }
+    })
+
+    setCalculatedAnnual(annual)
+    return annual
+  }
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true)
 
     try {
-      // Create a payload that matches your FastAPI endpoint's expected input
-      const payload = {
+      // Calculate annual rainfall
+      const annualRainfall = calculateAnnualRainfall()
+
+      // Create a complete payload with all required fields
+      const payload: Record<string, any> = {
         YEAR: values.year,
-        [values.month]: 1, // Set the selected month to 1 to indicate it's the current month
-        [`SUBDIVISION_${values.subdivision}`]: 1, // Set the selected subdivision to 1 (one-hot encoding)
-        [values.season]: 1, // Set the selected season to 1
         RainToday: values.rainToday === "yes" ? 1 : 0,
+        ANNUAL: annualRainfall,
       }
 
-      // Add all subdivisions with 0 except the selected one
-      SUBDIVISIONS.forEach((sub) => {
-        if (sub !== values.subdivision) {
-          payload[`SUBDIVISION_${sub}`] = 0
-        }
+      // Add monthly rainfall values if provided
+      if (values.monthlyRainfall) {
+        Object.entries(values.monthlyRainfall).forEach(([month, value]) => {
+          if (value !== undefined && !isNaN(value)) {
+            payload[month] = value
+          } else {
+            payload[month] = 0
+          }
+        })
+      } else {
+        // Initialize all months to 0
+        MONTHS.forEach((month) => {
+          payload[month.value] = 0
+        })
+      }
+
+      // Set the selected month to 1 for one-hot encoding
+      MONTHS.forEach((month) => {
+        payload[`${month.value}_selected`] = month.value === values.month ? 1 : 0
       })
 
-      // Add all seasons with 0 except the selected one
-      SEASONS.forEach((season) => {
-        if (season.value !== values.season) {
-          payload[season.value] = 0
-        }
+      // Set seasonal values based on the month
+      if (values.month === "JAN" || values.month === "FEB") {
+        payload["Jan-Feb"] = 1
+        payload["Mar-May"] = 0
+        payload["Jun-Sep"] = 0
+        payload["Oct-Dec"] = 0
+      } else if (values.month === "MAR" || values.month === "APR" || values.month === "MAY") {
+        payload["Jan-Feb"] = 0
+        payload["Mar-May"] = 1
+        payload["Jun-Sep"] = 0
+        payload["Oct-Dec"] = 0
+      } else if (values.month === "JUN" || values.month === "JUL" || values.month === "AUG" || values.month === "SEP") {
+        payload["Jan-Feb"] = 0
+        payload["Mar-May"] = 0
+        payload["Jun-Sep"] = 1
+        payload["Oct-Dec"] = 0
+      } else {
+        payload["Jan-Feb"] = 0
+        payload["Mar-May"] = 0
+        payload["Jun-Sep"] = 0
+        payload["Oct-Dec"] = 1
+      }
+
+      // Set all seasons to 0 first
+      payload.SPRING = 0
+      payload.SUMMER = 0
+      payload.MONSOON = 0
+      payload.AUTUMN = 0
+      payload.WINTER = 0
+
+      // Set the selected season to 1
+      payload[values.season] = 1
+
+      // Set all subdivisions to 0 first
+      SUBDIVISIONS.forEach((sub) => {
+        payload[`SUBDIVISION_${sub}`] = 0
       })
+
+      // Set the selected subdivision to 1
+      payload[`SUBDIVISION_${values.subdivision}`] = 1
 
       console.log("Sending payload to API:", payload)
 
@@ -181,7 +330,9 @@ export default function PredictPage() {
       })
 
       if (!response.ok) {
-        throw new Error(`API request failed with status ${response.status}`)
+        const errorText = await response.text()
+        console.error("API Error:", errorText)
+        throw new Error(`API request failed: ${errorText}`)
       }
 
       const data = await response.json()
@@ -200,6 +351,7 @@ export default function PredictPage() {
         willRain: data.prediction > 0.5, // Assuming the API returns a probability
         probability: probability,
         confidence: confidence,
+        annualRainfall: data.regional_info?.calculated_annual_rainfall || annualRainfall,
       })
 
       toast({
@@ -210,7 +362,7 @@ export default function PredictPage() {
       console.error("Error making prediction:", error)
       toast({
         title: "Something went wrong",
-        description: "Failed to get prediction. Please try again later.",
+        description: error instanceof Error ? error.message : "Failed to get prediction. Please try again later.",
         variant: "destructive",
       })
     } finally {
@@ -230,6 +382,44 @@ export default function PredictPage() {
 
   const currentRegion = getCurrentRegion(form.watch("subdivision"))
 
+  // Helper function to get rainfall likelihood based on region and season
+  const getRainfallLikelihood = (subdivision: string, season: string) => {
+    // High rainfall regions during monsoon
+    const highRainfallRegions = [
+      "KERALA",
+      "COASTAL KARNATAKA",
+      "KONKAN & GOA",
+      "ASSAM & MEGHALAYA",
+      "NAGA MANI MIZO TRIPURA",
+    ]
+
+    // Northeast monsoon regions
+    const northeastMonsoonRegions = ["TAMIL NADU", "COASTAL ANDHRA PRADESH"]
+
+    if (highRainfallRegions.includes(subdivision) && season === "MONSOON") {
+      return "very high"
+    } else if (northeastMonsoonRegions.includes(subdivision) && season === "AUTUMN") {
+      return "high"
+    } else if (["WEST RAJASTHAN", "SAURASHTRA & KUTCH"].includes(subdivision)) {
+      return "low"
+    } else if (season === "MONSOON") {
+      return "moderate to high"
+    } else if (season === "WINTER") {
+      return "low"
+    } else {
+      return "moderate"
+    }
+  }
+
+  const rainfallLikelihood = getRainfallLikelihood(form.watch("subdivision"), form.watch("season"))
+
+  // Update monthly rainfall defaults when subdivision changes
+  React.useEffect(() => {
+    const defaultValues = getDefaultMonthlyRainfall(currentSubdivision)
+    form.setValue("monthlyRainfall", defaultValues)
+    calculateAnnualRainfall()
+  }, [currentSubdivision])
+
   return (
     <div className="container max-w-6xl py-10">
       <div className="mb-8 flex items-center gap-2">
@@ -246,9 +436,10 @@ export default function PredictPage() {
             </CardHeader>
             <CardContent>
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="basic">Basic Info</TabsTrigger>
                   <TabsTrigger value="advanced">Regional Details</TabsTrigger>
+                  <TabsTrigger value="rainfall">Rainfall Data</TabsTrigger>
                 </TabsList>
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-6">
@@ -421,6 +612,82 @@ export default function PredictPage() {
                             `${form.watch("subdivision")} has unique rainfall patterns influenced by its geographical location and seasonal variations.`}
                         </p>
                       </div>
+
+                      <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-950">
+                        <h4 className="font-medium mb-2 flex items-center gap-2">
+                          <CloudRain className="h-4 w-4 text-blue-600" />
+                          <span>Rainfall Likelihood</span>
+                        </h4>
+                        <p className="text-sm text-blue-700 dark:text-blue-300">
+                          Based on historical data, the likelihood of rainfall in {form.watch("subdivision")} during{" "}
+                          {form.watch("season").toLowerCase()} season is <strong>{rainfallLikelihood}</strong>.
+                        </p>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="rainfall" className="space-y-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-medium">Monthly Rainfall Data</h3>
+                        <div className="flex items-center gap-2">
+                          <Droplets className="h-4 w-4 text-sky-500" />
+                          <span className="text-sm font-medium">
+                            Annual Total: <span className="text-sky-600">{calculatedAnnual?.toFixed(1) || 0} mm</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+                        {MONTHS.map((month) => (
+                          <FormItem key={month.value} className="space-y-1">
+                            <FormLabel className="text-xs">{month.label} (mm)</FormLabel>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={
+                                Number(
+                                  form.watch(`monthlyRainfall.${month.value}` as keyof z.infer<typeof formSchema>) || 0
+                                )
+                              }
+                              onChange={(e) => {
+                                form.setValue(
+                                  `monthlyRainfall.${month.value}` as keyof z.infer<typeof formSchema>,
+                                  e.target.value ? Number.parseFloat(e.target.value) : 0,
+                                )
+                                calculateAnnualRainfall()
+                              }}
+                              className="h-8"
+                            />
+                          </FormItem>
+                        ))}
+                      </div>
+
+                      <div className="rounded-lg bg-sky-50 p-4 dark:bg-sky-950">
+                        <h4 className="font-medium mb-2 flex items-center gap-2">
+                          <BarChart className="h-4 w-4 text-sky-600" />
+                          <span>Rainfall Distribution</span>
+                        </h4>
+                        <p className="text-sm text-sky-700 dark:text-sky-300 mb-2">
+                          The values above represent the monthly rainfall in millimeters for {form.watch("subdivision")}
+                          .
+                        </p>
+                        <div className="h-20 flex items-end gap-1">
+                          {MONTHS.map((month) => {
+                            const value = form.watch(`monthlyRainfall.${month.value}` as keyof z.infer<typeof formSchema>) || 0
+                            const maxValue = Math.max(
+                              ...(Object.values(form.watch("monthlyRainfall") || {}).filter(
+                                (v): v is number => typeof v === "number" && !isNaN(v),
+                              )),
+                            )
+                            const height = maxValue > 0 ? (Number(value) / maxValue) * 100 : 0
+                            return (
+                              <div key={month.value} className="flex-1 flex flex-col items-center">
+                                <div className="w-full bg-sky-500 rounded-t" style={{ height: `${height}%` }}></div>
+                                <div className="text-[10px] mt-1">{month.value}</div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
                     </TabsContent>
 
                     <Button type="submit" className="w-full" disabled={isLoading}>
@@ -541,6 +808,19 @@ export default function PredictPage() {
                     </div>
                   </div>
 
+                  {prediction.annualRainfall && (
+                    <div className="rounded-lg bg-sky-50 p-4 dark:bg-sky-950">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Droplets className="h-5 w-5 text-sky-600" />
+                        <h3 className="font-medium">Annual Rainfall</h3>
+                      </div>
+                      <div className="text-3xl font-bold text-sky-600">{prediction.annualRainfall.toFixed(1)} mm</div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Total annual rainfall for {form.watch("subdivision")}
+                      </p>
+                    </div>
+                  )}
+
                   <div
                     className={`rounded-lg p-6 ${
                       prediction.willRain ? "bg-blue-50 dark:bg-blue-950" : "bg-amber-50 dark:bg-amber-950"
@@ -620,6 +900,21 @@ export default function PredictPage() {
                               ? "minimal"
                               : "variable"}{" "}
                           rainfall in this region.
+                        </p>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <div className="mt-1 h-2 w-2 rounded-full bg-sky-500" />
+                        <p>
+                          <strong>Annual Rainfall:</strong> The total annual rainfall of{" "}
+                          {prediction.annualRainfall?.toFixed(1) || calculatedAnnual?.toFixed(1) || "0"} mm is{" "}
+                          {prediction.annualRainfall && prediction.annualRainfall > 2000
+                            ? "very high"
+                            : prediction.annualRainfall && prediction.annualRainfall > 1000
+                              ? "high"
+                              : prediction.annualRainfall && prediction.annualRainfall > 500
+                                ? "moderate"
+                                : "low"}{" "}
+                          for this region.
                         </p>
                       </li>
                     </ul>

@@ -43,7 +43,7 @@ export default function Home() {
                     Predict Rainfall Across India
                   </h1>
                   <p className="max-w-[600px] text-muted-foreground md:text-xl">
-                    Get accurate rainfall predictions for any region in India using our advanced machine learning model
+                    Get accurate rainfall predictions for any region in India using our machine learning model
                     trained on historical weather data.
                   </p>
                 </div>
