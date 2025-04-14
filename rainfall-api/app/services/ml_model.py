@@ -11,7 +11,7 @@ from app.models.prediction import PredictionInput
 from app.utils.data import load_dataset
 
 class MLModelService:
-    def __init__(self, model_path="./models/xgboost_model.joblib"):
+    def __init__(self, model_path="./models/rainfall_pipeline_model.joblib"):
         self.model_path = model_path
         self.model = None
         self.scaler = None
