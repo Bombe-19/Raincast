@@ -829,7 +829,7 @@ export default function PredictPage() {
                     <p>
                       The wettest month across India is typically <strong>{rainfallStats.wettest_month}</strong> and the
                       driest is <strong>{rainfallStats.driest_month}</strong>. The average annual rainfall across India
-                      is <strong>{rainfallStats.avg_annual_rainfall.toFixed(1)} mm</strong>.
+                      is <strong>{rainfallStats?.avg_annual_rainfall?.toFixed(1) || "N/A"} mm</strong>.
                     </p>
                   )}
                 </div>

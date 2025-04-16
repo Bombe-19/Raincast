@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 import pandas as pd
 import os
 import numpy as np
@@ -229,24 +231,76 @@ def generate_synthetic_data():
     return df
 
 def get_rainfall_statistics():
-    """Get general statistics about rainfall in India"""
-    df = load_dataset()
-    
-    if df is None or df.empty:
-        return None
-    
-    stats = {
-        'avg_annual_rainfall': df['ANNUAL'].mean(),
-        'max_annual_rainfall': df['ANNUAL'].max(),
-        'min_annual_rainfall': df['ANNUAL'].min(),
-        'monsoon_contribution': (df['Jun_Sep'].mean() / df['ANNUAL'].mean()) * 100 if df['ANNUAL'].mean() > 0 else 0,
-        'rain_probability': df['PredictedRainTomorrow'].mean() * 100,
-        'wettest_month': df[['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']].mean().idxmax(),
-        'driest_month': df[['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']].mean().idxmin()
-    }
-    
-    return stats
+    """
+    Get general rainfall statistics for India from the dataset.
+    Returns a dictionary with statistics or None if there was an error.
+    """
+    try:
+        # Determine base directory using __file__ or fallback to cwd
+        if "__file__" in globals():
+            base_dir = Path(__file__).resolve().parent.parent
+        else:
+            base_dir = Path(os.getcwd())
 
+        # Primary dataset path
+        dataset_path = base_dir / "data" / "rain_predictions1.csv"
+        print(f"Trying to load dataset from: {dataset_path}")
+
+        # Check if the dataset exists
+        if not dataset_path.exists():
+            print(f"Dataset not found at: {dataset_path}")
+            # Try fallback paths
+            possible_paths = [
+                Path("data/rain_predictions1.csv"),
+                Path("../data/rain_predictions1.csv"),
+                Path("app/data/rain_predictions1.csv"),
+            ]
+            for path in possible_paths:
+                print(f"Checking fallback path: {path.resolve()}")
+                if path.exists():
+                    dataset_path = path
+                    print(f"Found dataset at: {dataset_path}")
+                    break
+            else:
+                print("Could not find dataset in any expected location.")
+                return None
+
+        # Load dataset
+        print(f"Loading dataset from: {dataset_path.resolve()}")
+        df = pd.read_csv(dataset_path)
+
+        # Prepare statistics
+        stats = {
+            "total_records": len(df),
+            "time_period": {
+                "start_year": int(df["YEAR"].min()) if "YEAR" in df.columns else None,
+                "end_year": int(df["YEAR"].max()) if "YEAR" in df.columns else None,
+            },
+            "overall_stats": {
+                "mean_annual_rainfall": float(df["ANNUAL"].mean()) if "ANNUAL" in df.columns else None,
+                "max_annual_rainfall": float(df["ANNUAL"].max()) if "ANNUAL" in df.columns else None,
+                "min_annual_rainfall": float(df["ANNUAL"].min()) if "ANNUAL" in df.columns else None,
+                "std_annual_rainfall": float(df["ANNUAL"].std()) if "ANNUAL" in df.columns else None,
+            },
+            "subdivisions": df["SUBDIVISION"].unique().tolist() if "SUBDIVISION" in df.columns else [],
+        }
+
+        # Add seasonal stats if all monthly columns exist
+        months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+        if all(month in df.columns for month in months):
+            stats["seasonal_stats"] = {
+                "winter": float(df[["JAN", "FEB"]].sum(axis=1).mean()),
+                "pre_monsoon": float(df[["MAR", "APR", "MAY"]].sum(axis=1).mean()),
+                "monsoon": float(df[["JUN", "JUL", "AUG", "SEP"]].sum(axis=1).mean()),
+                "post_monsoon": float(df[["OCT", "NOV", "DEC"]].sum(axis=1).mean()),
+            }
+
+        # Return as JSON serializable
+        return json.loads(json.dumps(stats, default=str))
+
+    except Exception as e:
+        print(f"Error calculating rainfall statistics: {str(e)}")
+        return None
 def get_regional_data(subdivision):
     """Get regional data for a specific subdivision"""
     df = load_dataset()
@@ -326,8 +380,8 @@ def get_regional_data(subdivision):
     
     # Get historical data for the recent years
     if 'YEAR' in subdivision_data.columns and 'ANNUAL' in subdivision_data.columns:
-        recent_years = sorted(subdivision_data['YEAR'].unique(), reverse=True)
-        recent_years = [year for year in recent_years if 1901 <= year <= 2016][:5]
+        recent_years = subdivision_data['YEAR'].unique().tolist() if 'YEAR' in subdivision_data.columns else []
+        recent_years = [year for year in recent_years if 1901 <= year <= 2015]
         historical_data = []
         
         for year in recent_years:

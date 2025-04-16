@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import uvicorn
 import os
 from app.models.prediction import PredictionInput, PredictionOutput
@@ -88,15 +89,28 @@ def predict_rainfall(input_data: PredictionInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/stats")
+@app.get("/stats", response_class=JSONResponse)
 def get_statistics():
-    """Get general rainfall statistics for India"""
-    stats = get_rainfall_statistics()
-    if stats is None:
-        raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
-    return stats
+    """
+    Get general rainfall statistics for India.
+    Returns:
+        A dictionary of statistics or raises HTTPException on failure.
+    """
+    try:
+        stats = get_rainfall_statistics()
 
-@app.post("/regional-data")
+        if not stats:
+            raise HTTPException(status_code=404, detail="No statistics available")
+
+        return {"success": True, "data": stats}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error while retrieving statistics: {str(e)}"
+        )
+
+@app.post("/regional-data",response_class=JSONResponse)
 def get_subdivision_data(data: dict):
     """Get regional data for a specific subdivision"""
     subdivision = data.get("subdivision")
