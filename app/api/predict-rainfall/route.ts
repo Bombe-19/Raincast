@@ -5,11 +5,19 @@ export async function POST(request: Request) {
     const data = await request.json()
 
     // Log the received data for debugging
-    console.log("Received data:", data)
+    console.log("Received data for prediction:", data)
+
+    if (!data) {
+      return NextResponse.json({ error: "Request body is required" }, { status: 400 })
+    }
 
     // Forward the request to your FastAPI backend
     const apiUrl = process.env.FASTAPI_API_URL || "http://localhost:8000/predict"
-    console.log("Sending request to:", apiUrl)
+    console.log("Sending prediction request to:", apiUrl)
+
+    // Add a timeout to the fetch request
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout for predictions
 
     const response = await fetch(apiUrl, {
       method: "POST",
@@ -17,16 +25,22 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(data),
+      signal: controller.signal,
     })
 
+    clearTimeout(timeoutId)
+
     if (!response.ok) {
-      // Try to get the error message from the response
-      let errorText = ""
+      // Get the response text first and store it
+      const responseText = await response.text()
+      let errorText = responseText
+      
+      // Try to parse it as JSON if possible
       try {
-        const errorData = await response.json()
+        const errorData = JSON.parse(responseText)
         errorText = JSON.stringify(errorData)
       } catch (e) {
-        errorText = await response.text()
+        // If it's not valid JSON, just use the text as is
       }
 
       console.error(`FastAPI error (${response.status}):`, errorText)
@@ -34,12 +48,30 @@ export async function POST(request: Request) {
     }
 
     const result = await response.json()
-    console.log("FastAPI response:", result)
+    console.log("FastAPI prediction response:", result)
 
     return NextResponse.json(result)
   } catch (error) {
     console.error("Error in predict-rainfall API route:", error)
-    const errorMessage = error instanceof Error ? error.message : "Failed to process prediction request";
-    return NextResponse.json({ error: errorMessage }, { status: 500 })
+
+    // Return a more informative error response
+    if (error instanceof Error && error.name === "AbortError") {
+      return NextResponse.json(
+        {
+          error: "Request timed out. The FastAPI backend might not be running or is unreachable.",
+          details: error.message,
+          tip: "Make sure your FastAPI server is running at the URL specified in FASTAPI_API_URL environment variable.",
+        },
+        { status: 504 },
+      )
+    }
+
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to fetch regional data",
+        tip: "Check if your FastAPI server is running and FASTAPI_API_URL is set correctly.",
+      },
+      { status: 500 },
+    )
   }
 }

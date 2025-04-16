@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import numpy as np
+import random
 
 def load_dataset(file_path="./data/rain_predictions1.csv"):
     """Load the rainfall dataset"""
@@ -11,9 +12,7 @@ def load_dataset(file_path="./data/rain_predictions1.csv"):
             alternative_paths = [
                 "./rainfall_data.csv",
                 "../data/rainfall_data.csv",
-                "../../data/rainfall_data.csv",
-                "/app/data/rainfall_data.csv",
-                "/data/rainfall_data.csv"
+                "../../data/rainfall_data.csv"
             ]
             
             for alt_path in alternative_paths:
@@ -22,9 +21,8 @@ def load_dataset(file_path="./data/rain_predictions1.csv"):
                     print(f"Found dataset at {file_path}")
                     break
             else:
-                # If no dataset is found, create a simple dummy dataset for imputer fitting
-                print("No dataset found. Creating a dummy dataset for imputer fitting.")
-                return create_dummy_dataset()
+                print("Dataset not found in any of the expected locations. Generating synthetic data.")
+                return generate_synthetic_data()
         
         # Load the dataset
         df = pd.read_csv(file_path)
@@ -56,72 +54,178 @@ def load_dataset(file_path="./data/rain_predictions1.csv"):
     
     except Exception as e:
         print(f"Error loading dataset: {e}")
-        import traceback
-        traceback.print_exc()
-        # Create a dummy dataset as fallback
-        return create_dummy_dataset()
+        return generate_synthetic_data()
 
-def create_dummy_dataset():
-    """Create a simple dummy dataset for imputer fitting when no real dataset is available"""
-    print("Creating dummy dataset for model initialization")
+def generate_synthetic_data():
+    """Generate synthetic rainfall data for India"""
+    print("Generating synthetic rainfall data...")
     
-    # Create a basic structure with all expected columns
-    data = {
-        'YEAR': [2020, 2021, 2022, 2023],
-        'JAN': [10.5, 12.3, 9.8, 11.2],
-        'FEB': [15.2, 14.8, 16.1, 15.5],
-        'MAR': [20.1, 19.5, 21.2, 20.8],
-        'APR': [25.3, 24.8, 26.1, 25.7],
-        'MAY': [30.5, 29.8, 31.2, 30.9],
-        'JUN': [150.2, 145.8, 155.3, 152.1],
-        'JUL': [200.5, 195.8, 205.3, 202.1],
-        'AUG': [180.3, 175.8, 185.2, 182.5],
-        'SEP': [120.5, 115.8, 125.3, 122.1],
-        'OCT': [50.2, 48.5, 52.1, 51.3],
-        'NOV': [25.3, 24.1, 26.5, 25.8],
-        'DEC': [15.2, 14.5, 16.1, 15.8],
-        'Jan-Feb': [25.7, 27.1, 25.9, 26.7],
-        'Mar-May': [75.9, 74.1, 78.5, 77.4],
-        'Jun-Sep': [651.5, 633.2, 671.1, 658.8],
-        'Oct-Dec': [90.7, 87.1, 94.7, 92.9],
-        'ANNUAL': [843.8, 821.5, 870.2, 855.8],
-        'RainToday': [1, 0, 1, 0],
-        'PredictedRainTomorrow': [1, 0, 1, 0],
-        'SPRING': [0, 0, 1, 0],
-        'SUMMER': [0, 1, 0, 0],
-        'MONSOON': [1, 0, 0, 1],
-        'AUTUMN': [0, 0, 0, 0],
-        'WINTER': [0, 0, 0, 0]
-    }
-    
-    # Add subdivision columns (one-hot encoded)
-    for subdivision in [
+    # Define subdivisions
+    subdivisions = [
         "ANDAMAN & NICOBAR ISLANDS", "ARUNACHAL PRADESH", "ASSAM & MEGHALAYA", 
-        "BIHAR", "CHHATTISGARH", "COASTAL ANDHRA PRADESH", "COASTAL KARNATAKA",
+        "BIHAR", "CHHATTISGARH", "COASTAL ANDHRA PRADESH", "COASTAL KARNATAKA", 
         "EAST MADHYA PRADESH", "EAST RAJASTHAN", "EAST UTTAR PRADESH", 
-        "GANGETIC WEST BENGAL", "GUJARAT REGION", "HARYANA DELHI & CHANDIGARH",
-        "HIMACHAL PRADESH", "JAMMU & KASHMIR", "JHARKHAND", "KERALA", "KONKAN & GOA",
-        "LAKSHADWEEP", "MADHYA MAHARASHTRA", "MATATHWADA", "NAGA MANI MIZO TRIPURA",
-        "NORTH INTERIOR KARNATAKA", "ORISSA", "PUNJAB", "RAYALSEEMA", "SAURASHTRA & KUTCH",
-        "SOUTH INTERIOR KARNATAKA", "SUB HIMALAYAN WEST BENGAL & SIKKIM", "TAMIL NADU",
-        "TELANGANA", "UTTARAKHAND", "VIDARBHA", "WEST MADHYA PRADESH", "WEST RAJASTHAN",
+        "GANGETIC WEST BENGAL", "GUJARAT REGION", "HARYANA DELHI & CHANDIGARH", 
+        "HIMACHAL PRADESH", "JAMMU & KASHMIR", "JHARKHAND", "KERALA", 
+        "KONKAN & GOA", "LAKSHADWEEP", "MADHYA MAHARASHTRA", "MATATHWADA", 
+        "NAGA MANI MIZO TRIPURA", "NORTH INTERIOR KARNATAKA", "ORISSA", 
+        "PUNJAB", "RAYALSEEMA", "SAURASHTRA & KUTCH", "SOUTH INTERIOR KARNATAKA", 
+        "SUB HIMALAYAN WEST BENGAL & SIKKIM", "TAMIL NADU", "TELANGANA", 
+        "UTTARAKHAND", "VIDARBHA", "WEST MADHYA PRADESH", "WEST RAJASTHAN", 
         "WEST UTTAR PRADESH"
-    ]:
-        col_name = f"SUBDIVISION_{subdivision}"
-        # Set Kerala as 1 for first row, distribute others
-        if subdivision == "KERALA":
-            data[col_name] = [1, 0, 0, 0]
-        elif subdivision == "TAMIL NADU":
-            data[col_name] = [0, 1, 0, 0]
-        elif subdivision == "COASTAL KARNATAKA":
-            data[col_name] = [0, 0, 1, 0]
-        elif subdivision == "WEST RAJASTHAN":
-            data[col_name] = [0, 0, 0, 1]
-        else:
-            data[col_name] = [0, 0, 0, 0]
+    ]
     
+    # Define years
+    years = list(range(2010, 2023))
+    
+    # Define months
+    months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+    
+    # Create empty dataframe
+    data = []
+    
+    # Generate data for each subdivision and year
+    for subdivision in subdivisions:
+        for year in years:
+            # Generate monthly rainfall based on region characteristics
+            if subdivision in ["KERALA", "COASTAL KARNATAKA", "KONKAN & GOA", "ASSAM & MEGHALAYA"]:
+                # High rainfall regions
+                monthly_rainfall = {
+                    "JAN": random.uniform(10, 50),
+                    "FEB": random.uniform(15, 60),
+                    "MAR": random.uniform(30, 80),
+                    "APR": random.uniform(80, 150),
+                    "MAY": random.uniform(150, 300),
+                    "JUN": random.uniform(500, 800),
+                    "JUL": random.uniform(700, 1000),
+                    "AUG": random.uniform(600, 900),
+                    "SEP": random.uniform(300, 500),
+                    "OCT": random.uniform(200, 350),
+                    "NOV": random.uniform(100, 200),
+                    "DEC": random.uniform(30, 80)
+                }
+            elif subdivision in ["WEST RAJASTHAN", "SAURASHTRA & KUTCH"]:
+                # Low rainfall regions
+                monthly_rainfall = {
+                    "JAN": random.uniform(0, 10),
+                    "FEB": random.uniform(0, 15),
+                    "MAR": random.uniform(0, 20),
+                    "APR": random.uniform(5, 25),
+                    "MAY": random.uniform(10, 30),
+                    "JUN": random.uniform(20, 60),
+                    "JUL": random.uniform(50, 150),
+                    "AUG": random.uniform(40, 120),
+                    "SEP": random.uniform(20, 60),
+                    "OCT": random.uniform(5, 25),
+                    "NOV": random.uniform(0, 15),
+                    "DEC": random.uniform(0, 10)
+                }
+            else:
+                # Moderate rainfall regions
+                monthly_rainfall = {
+                    "JAN": random.uniform(5, 30),
+                    "FEB": random.uniform(10, 40),
+                    "MAR": random.uniform(15, 50),
+                    "APR": random.uniform(30, 80),
+                    "MAY": random.uniform(50, 150),
+                    "JUN": random.uniform(100, 300),
+                    "JUL": random.uniform(150, 400),
+                    "AUG": random.uniform(120, 350),
+                    "SEP": random.uniform(80, 250),
+                    "OCT": random.uniform(40, 150),
+                    "NOV": random.uniform(20, 80),
+                    "DEC": random.uniform(10, 40)
+                }
+            
+            # Calculate seasonal aggregates
+            jan_feb = monthly_rainfall["JAN"] + monthly_rainfall["FEB"]
+            mar_may = monthly_rainfall["MAR"] + monthly_rainfall["APR"] + monthly_rainfall["MAY"]
+            jun_sep = monthly_rainfall["JUN"] + monthly_rainfall["JUL"] + monthly_rainfall["AUG"] + monthly_rainfall["SEP"]
+            oct_dec = monthly_rainfall["OCT"] + monthly_rainfall["NOV"] + monthly_rainfall["DEC"]
+            
+            # Calculate annual rainfall
+            annual = sum(monthly_rainfall.values())
+            
+            # Determine seasonal indicators
+            current_month = random.choice(months)
+            spring = 1 if current_month in ["MAR", "APR", "MAY"] else 0
+            summer = 1 if current_month in ["JUN", "JUL", "AUG"] else 0
+            monsoon = 1 if current_month in ["JUN", "JUL", "AUG", "SEP"] else 0
+            autumn = 1 if current_month in ["SEP", "OCT", "NOV"] else 0
+            winter = 1 if current_month in ["DEC", "JAN", "FEB"] else 0
+            
+            # Determine if it's raining today based on the month and region
+            rain_probability = 0
+            if monsoon == 1:
+                rain_probability = 0.8
+            elif summer == 1:
+                rain_probability = 0.5
+            elif spring == 1:
+                rain_probability = 0.4
+            elif autumn == 1:
+                rain_probability = 0.3
+            elif winter == 1:
+                rain_probability = 0.2
+                
+            # Adjust for regional variations
+            if subdivision in ["KERALA", "COASTAL KARNATAKA", "KONKAN & GOA", "ASSAM & MEGHALAYA"]:
+                rain_probability += 0.2
+            elif subdivision in ["WEST RAJASTHAN", "SAURASHTRA & KUTCH"]:
+                rain_probability -= 0.2
+                
+            rain_today = 1 if random.random() < rain_probability else 0
+            
+            # Predict rain tomorrow with some correlation to rain today and seasonal factors
+            rain_tomorrow_probability = rain_probability
+            if rain_today == 1:
+                rain_tomorrow_probability += 0.2
+            else:
+                rain_tomorrow_probability -= 0.1
+                
+            # Clamp probability between 0 and 1
+            rain_tomorrow_probability = max(0, min(1, rain_tomorrow_probability))
+            predicted_rain_tomorrow = 1 if random.random() < rain_tomorrow_probability else 0
+            
+            # Create row for this subdivision and year
+            row = {
+                "YEAR": year,
+                "SUBDIVISION": subdivision,
+                "JAN": monthly_rainfall["JAN"],
+                "FEB": monthly_rainfall["FEB"],
+                "MAR": monthly_rainfall["MAR"],
+                "APR": monthly_rainfall["APR"],
+                "MAY": monthly_rainfall["MAY"],
+                "JUN": monthly_rainfall["JUN"],
+                "JUL": monthly_rainfall["JUL"],
+                "AUG": monthly_rainfall["AUG"],
+                "SEP": monthly_rainfall["SEP"],
+                "OCT": monthly_rainfall["OCT"],
+                "NOV": monthly_rainfall["NOV"],
+                "DEC": monthly_rainfall["DEC"],
+                "Jan_Feb": jan_feb,
+                "Mar_May": mar_may,
+                "Jun_Sep": jun_sep,
+                "Oct_Dec": oct_dec,
+                "ANNUAL": annual,
+                "SPRING": spring,
+                "SUMMER": summer,
+                "MONSOON": monsoon,
+                "AUTUMN": autumn,
+                "WINTER": winter,
+                "RainToday": rain_today,
+                "PredictedRainTomorrow": predicted_rain_tomorrow
+            }
+            
+            # Add one-hot encoded subdivision
+            for sub in subdivisions:
+                row[f"SUBDIVISION_{sub}"] = 1 if sub == subdivision else 0
+                
+            data.append(row)
+    
+    # Create DataFrame
     df = pd.DataFrame(data)
-    print(f"Created dummy dataset with {df.shape[0]} rows and {df.shape[1]} columns")
+    
+    print(f"Generated synthetic dataset with {df.shape[0]} rows and {df.shape[1]} columns")
     return df
 
 def get_rainfall_statistics():
@@ -135,24 +239,105 @@ def get_rainfall_statistics():
         'avg_annual_rainfall': df['ANNUAL'].mean(),
         'max_annual_rainfall': df['ANNUAL'].max(),
         'min_annual_rainfall': df['ANNUAL'].min(),
-        'monsoon_contribution': (df['Jun-Sep'].mean() / df['ANNUAL'].mean()) * 100 if df['ANNUAL'].mean() > 0 else 0,
+        'monsoon_contribution': (df['Jun_Sep'].mean() / df['ANNUAL'].mean()) * 100 if df['ANNUAL'].mean() > 0 else 0,
         'rain_probability': df['PredictedRainTomorrow'].mean() * 100,
         'wettest_month': df[['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']].mean().idxmax(),
         'driest_month': df[['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']].mean().idxmin()
     }
     
-    # Add seasonal statistics
-    if 'MONSOON' in df.columns and 'SPRING' in df.columns and 'SUMMER' in df.columns and 'AUTUMN' in df.columns and 'WINTER' in df.columns:
-        monsoon_data = df[df['MONSOON'] == 1]
-        spring_data = df[df['SPRING'] == 1]
-        summer_data = df[df['SUMMER'] == 1]
-        autumn_data = df[df['AUTUMN'] == 1]
-        winter_data = df[df['WINTER'] == 1]
-        
-        stats['monsoon_rain_probability'] = monsoon_data['PredictedRainTomorrow'].mean() * 100 if not monsoon_data.empty else 0
-        stats['spring_rain_probability'] = spring_data['PredictedRainTomorrow'].mean() * 100 if not spring_data.empty else 0
-        stats['summer_rain_probability'] = summer_data['PredictedRainTomorrow'].mean() * 100 if not summer_data.empty else 0
-        stats['autumn_rain_probability'] = autumn_data['PredictedRainTomorrow'].mean() * 100 if not autumn_data.empty else 0
-        stats['winter_rain_probability'] = winter_data['PredictedRainTomorrow'].mean() * 100 if not winter_data.empty else 0
-    
     return stats
+
+def get_regional_data(subdivision):
+    """Get regional data for a specific subdivision"""
+    df = load_dataset()
+    
+    if df is None or df.empty:
+        print("Dataset is empty or failed to load")
+        return None
+    
+    # Check if we're dealing with a column name in the format "SUBDIVISION_Kerala"
+    if subdivision.startswith("SUBDIVISION_"):
+        # Extract the actual subdivision name
+        col_name = subdivision
+        subdivision = subdivision.replace("SUBDIVISION_", "")
+        
+        # First try looking for the exact column
+        if col_name in df.columns:
+            print(f"Found column: {col_name}")
+            subdivision_data = df[df[col_name] == 1]
+        else:
+            print(f"Column {col_name} not found")
+            # Then try looking for the subdivision in the SUBDIVISION column
+            subdivision_data = df[df["SUBDIVISION"] == subdivision]
+    else:
+        # No prefix - first try direct match with SUBDIVISION column
+        subdivision_data = df[df["SUBDIVISION"] == subdivision]
+        
+        # If that doesn't work, try finding the corresponding one-hot column
+        if subdivision_data.empty:
+            col_name = f"SUBDIVISION_{subdivision}"
+            if col_name in df.columns:
+                print(f"Using one-hot column: {col_name}")
+                subdivision_data = df[df[col_name] == 1]
+    
+    if subdivision_data.empty:
+        print(f"No data found for subdivision: {subdivision}")
+        # Print available subdivisions for debugging
+        print(f"Available one-hot columns: {[col for col in df.columns if col.startswith('SUBDIVISION_')]}")
+        print(f"Available subdivisions: {df['SUBDIVISION'].unique().tolist() if 'SUBDIVISION' in df.columns else []}")
+        return None
+    
+    print(f"Found {len(subdivision_data)} records for subdivision: {subdivision}")
+    
+    # Calculate monthly averages
+    monthly_averages = {}
+    for month in ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]:
+        if month in subdivision_data.columns:
+            monthly_averages[month] = float(subdivision_data[month].mean())
+    
+    # Determine seasonal pattern based on monthly averages
+    if monthly_averages:
+        max_month = max(monthly_averages, key=monthly_averages.get)
+        min_month = min(monthly_averages, key=monthly_averages.get)
+        
+        monsoon_months = ["JUN", "JUL", "AUG", "SEP"]
+        winter_months = ["DEC", "JAN", "FEB"]
+        
+        if max_month in monsoon_months:
+            seasonal_pattern = f"{subdivision} receives most of its rainfall during the Southwest Monsoon season (June-September), with peak rainfall in {max_month}."
+        elif max_month in ["OCT", "NOV"]:
+            seasonal_pattern = f"{subdivision} receives significant rainfall during the Northeast Monsoon (October-December), with peak rainfall in {max_month}."
+        else:
+            seasonal_pattern = f"{subdivision} has an unusual rainfall pattern with peak rainfall in {max_month}."
+    else:
+        seasonal_pattern = f"No monthly data available for {subdivision}."
+    
+    # Calculate additional statistics
+    regional_data = {
+        'subdivision': subdivision,
+        'avg_annual_rainfall': float(subdivision_data['ANNUAL'].mean()) if 'ANNUAL' in subdivision_data.columns else 0,
+        'monsoon_rainfall_pct': float((subdivision_data['Jun_Sep'].mean() / subdivision_data['ANNUAL'].mean()) * 100) 
+                               if ('Jun_Sep' in subdivision_data.columns and 'ANNUAL' in subdivision_data.columns and subdivision_data['ANNUAL'].mean() > 0) 
+                               else 0,
+        'rain_probability': float(subdivision_data['PredictedRainTomorrow'].mean()) if 'PredictedRainTomorrow' in subdivision_data.columns else 0,
+        'monthly_averages': monthly_averages,
+        'seasonal_pattern': seasonal_pattern
+    }
+    
+    # Get historical data for the recent years
+    if 'YEAR' in subdivision_data.columns and 'ANNUAL' in subdivision_data.columns:
+        recent_years = sorted(subdivision_data['YEAR'].unique(), reverse=True)
+        recent_years = [year for year in recent_years if 1901 <= year <= 2016][:5]
+        historical_data = []
+        
+        for year in recent_years:
+            year_data = subdivision_data[subdivision_data['YEAR'] == year]
+            if not year_data.empty:
+                historical_data.append({
+                    'year': int(year),
+                    'annual_rainfall': float(year_data['ANNUAL'].iloc[0])
+                })
+        
+        regional_data['historical_data'] = historical_data
+    
+    return regional_data

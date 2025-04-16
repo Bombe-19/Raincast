@@ -1,10 +1,8 @@
 "use client"
 
-import React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { CloudRain, Calendar, MapPin, BarChart, Umbrella, CloudLightning, Droplets } from "lucide-react"
+import { CloudRain, Calendar, MapPin, BarChart, Umbrella, CloudLightning, Droplets, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -15,6 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 // Define the subdivisions from your dataset
 const SUBDIVISIONS = [
@@ -117,61 +116,7 @@ const SUBDIVISION_GROUPS = {
 const currentYear = new Date().getFullYear()
 const years = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i)
 
-// Define default monthly rainfall values based on region and season
-const getDefaultMonthlyRainfall = (subdivision: string) => {
-  // High rainfall regions
-  if (["KERALA", "COASTAL KARNATAKA", "KONKAN & GOA", "ASSAM & MEGHALAYA"].includes(subdivision)) {
-    return {
-      JAN: 20.5,
-      FEB: 25.3,
-      MAR: 40.2,
-      APR: 110.5,
-      MAY: 200.3,
-      JUN: 650.8,
-      JUL: 850.2,
-      AUG: 750.5,
-      SEP: 350.2,
-      OCT: 250.5,
-      NOV: 150.3,
-      DEC: 50.2,
-    }
-  }
-  // Moderate rainfall regions
-  else if (["TAMIL NADU", "COASTAL ANDHRA PRADESH", "GANGETIC WEST BENGAL"].includes(subdivision)) {
-    return {
-      JAN: 15.2,
-      FEB: 20.1,
-      MAR: 25.3,
-      APR: 50.2,
-      MAY: 100.5,
-      JUN: 150.3,
-      JUL: 200.5,
-      AUG: 180.2,
-      SEP: 150.5,
-      OCT: 200.3,
-      NOV: 180.5,
-      DEC: 40.2,
-    }
-  }
-  // Low rainfall regions
-  else {
-    return {
-      JAN: 5.2,
-      FEB: 8.1,
-      MAR: 10.3,
-      APR: 15.2,
-      MAY: 25.5,
-      JUN: 50.3,
-      JUL: 80.5,
-      AUG: 70.2,
-      SEP: 40.5,
-      OCT: 20.3,
-      NOV: 10.5,
-      DEC: 5.2,
-    }
-  }
-}
-
+// Define the form schema
 const formSchema = z.object({
   year: z.number().min(1900).max(2100),
   month: z.string().min(1),
@@ -197,6 +142,34 @@ const formSchema = z.object({
     .optional(),
 })
 
+// Define types for rainfall statistics and regional data
+interface RainfallStats {
+  avg_annual_rainfall: number
+  max_annual_rainfall: number
+  min_annual_rainfall: number
+  monsoon_contribution: number
+  rain_probability: number
+  wettest_month: string
+  driest_month: string
+}
+
+interface RegionalData {
+  avg_annual_rainfall: number
+  monsoon_rainfall_pct: number
+  rain_probability: number
+  monthly_averages: Record<string, number>
+  seasonal_pattern: string
+}
+
+interface BackendStatus {
+  status: "success" | "error"
+  message: string
+  backendStatus?: any
+  backendUrl?: string
+  error?: string
+  tip?: string
+}
+
 export default function PredictPage() {
   const { toast } = useToast()
   const router = useRouter()
@@ -208,9 +181,14 @@ export default function PredictPage() {
     annualRainfall?: number
   }>(null)
   const [activeTab, setActiveTab] = useState("basic")
-  const [showRainfallInputs, setShowRainfallInputs] = useState(false)
   const [calculatedAnnual, setCalculatedAnnual] = useState<number | null>(null)
+  const [rainfallStats, setRainfallStats] = useState<RainfallStats | null>(null)
+  const [regionalData, setRegionalData] = useState<RegionalData | null>(null)
+  const [isLoadingRegionalData, setIsLoadingRegionalData] = useState(false)
+  const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null)
+  const [isCheckingBackend, setIsCheckingBackend] = useState(false)
 
+  // Initialize form with default values
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -219,20 +197,146 @@ export default function PredictPage() {
       subdivision: "KERALA",
       season: "MONSOON",
       rainToday: "yes",
-      monthlyRainfall: getDefaultMonthlyRainfall("KERALA"),
+      monthlyRainfall: {
+        JAN: 0,
+        FEB: 0,
+        MAR: 0,
+        APR: 0,
+        MAY: 0,
+        JUN: 0,
+        JUL: 0,
+        AUG: 0,
+        SEP: 0,
+        OCT: 0,
+        NOV: 0,
+        DEC: 0,
+      },
     },
   })
 
-  // Watch for subdivision changes to update default rainfall values
+  // Watch for subdivision changes to update regional data
   const currentSubdivision = form.watch("subdivision")
 
+  // Check backend status on component mount
+  useEffect(() => {
+    checkBackendStatus()
+  }, [])
+
+  // Function to check backend status
+  const checkBackendStatus = async () => {
+    setIsCheckingBackend(true)
+    try {
+      const response = await fetch("/api/predict-rainfall/check-backend")
+      const data = await response.json()
+      setBackendStatus(data)
+
+      if (data.status === "error") {
+        toast({
+          title: "Backend Connection Issue",
+          description: data.message,
+          variant: "destructive",
+        })
+      } else {
+        // If backend is running, fetch rainfall stats
+        fetchRainfallStats()
+      }
+    } catch (error) {
+      console.error("Error checking backend status:", error)
+      setBackendStatus({
+        status: "error",
+        message: "Failed to check backend status",
+        error: error instanceof Error ? error.message : "Unknown error",
+        tip: "There might be an issue with your Next.js API routes.",
+      })
+
+      toast({
+        title: "Connection Error",
+        description: "Failed to check backend status. Check the console for details.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsCheckingBackend(false)
+    }
+  }
+
+  // Fetch rainfall statistics
+  const fetchRainfallStats = async () => {
+    try {
+      const response = await fetch("/api/predict-rainfall/rainfall-stats")
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to fetch rainfall statistics")
+      }
+      const data = await response.json()
+      setRainfallStats(data)
+    } catch (error) {
+      console.error("Error fetching rainfall statistics:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch rainfall statistics. Using default values.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Fetch regional data when subdivision changes
+  useEffect(() => {
+    async function fetchRegionalData() {
+      if (!currentSubdivision || backendStatus?.status === "error") return
+
+      setIsLoadingRegionalData(true)
+      try {
+        const response = await fetch("/api/predict-rainfall/regional-data", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ subdivision: currentSubdivision }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || "Failed to fetch regional data")
+        }
+
+        const data = await response.json()
+        setRegionalData(data)
+
+        // Update monthly rainfall values with actual data
+        if (data.monthly_averages) {
+          const monthlyValues: Record<string, number> = {}
+
+          Object.entries(data.monthly_averages).forEach(([month, value]) => {
+            monthlyValues[month] = Number(value)
+          })
+
+          form.setValue("monthlyRainfall", monthlyValues)
+          calculateAnnualRainfall(monthlyValues)
+        }
+      } catch (error) {
+        console.error("Error fetching regional data:", error)
+        toast({
+          title: "Error",
+          description: "Failed to fetch regional data. Using default values.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoadingRegionalData(false)
+      }
+    }
+
+    if (currentSubdivision) {
+      fetchRegionalData()
+    }
+  }, [currentSubdivision, form, toast, backendStatus])
+
   // Calculate annual rainfall from monthly values
-  const calculateAnnualRainfall = () => {
-    const monthlyValues = form.getValues("monthlyRainfall")
-    if (!monthlyValues) return 0
+  const calculateAnnualRainfall = (monthlyValues?: Record<string, number>) => {
+    const values = monthlyValues || form.getValues("monthlyRainfall")
+    if (!values) return 0
 
     let annual = 0
-    Object.values(monthlyValues).forEach((value) => {
+    Object.values(values).forEach((value) => {
       if (value && !isNaN(value)) {
         annual += value
       }
@@ -243,6 +347,15 @@ export default function PredictPage() {
   }
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (backendStatus?.status === "error") {
+      toast({
+        title: "Backend Connection Issue",
+        description: "Cannot make predictions while the backend is unavailable.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -272,33 +385,11 @@ export default function PredictPage() {
         })
       }
 
-      // Set the selected month to 1 for one-hot encoding
-      MONTHS.forEach((month) => {
-        payload[`${month.value}_selected`] = month.value === values.month ? 1 : 0
-      })
-
-      // Set seasonal values based on the month
-      if (values.month === "JAN" || values.month === "FEB") {
-        payload["Jan-Feb"] = 1
-        payload["Mar-May"] = 0
-        payload["Jun-Sep"] = 0
-        payload["Oct-Dec"] = 0
-      } else if (values.month === "MAR" || values.month === "APR" || values.month === "MAY") {
-        payload["Jan-Feb"] = 0
-        payload["Mar-May"] = 1
-        payload["Jun-Sep"] = 0
-        payload["Oct-Dec"] = 0
-      } else if (values.month === "JUN" || values.month === "JUL" || values.month === "AUG" || values.month === "SEP") {
-        payload["Jan-Feb"] = 0
-        payload["Mar-May"] = 0
-        payload["Jun-Sep"] = 1
-        payload["Oct-Dec"] = 0
-      } else {
-        payload["Jan-Feb"] = 0
-        payload["Mar-May"] = 0
-        payload["Jun-Sep"] = 0
-        payload["Oct-Dec"] = 1
-      }
+      // Calculate seasonal aggregates with hyphens as expected by the model
+      payload["Jan-Feb"] = (payload.JAN || 0) + (payload.FEB || 0)
+      payload["Mar-May"] = (payload.MAR || 0) + (payload.APR || 0) + (payload.MAY || 0)
+      payload["Jun-Sep"] = (payload.JUN || 0) + (payload.JUL || 0) + (payload.AUG || 0) + (payload.SEP || 0)
+      payload["Oct-Dec"] = (payload.OCT || 0) + (payload.NOV || 0) + (payload.DEC || 0)
 
       // Set all seasons to 0 first
       payload.SPRING = 0
@@ -330,9 +421,8 @@ export default function PredictPage() {
       })
 
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error("API Error:", errorText)
-        throw new Error(`API request failed: ${errorText}`)
+        const errorData = await response.json()
+        throw new Error(errorData.error || "API request failed")
       }
 
       const data = await response.json()
@@ -340,18 +430,12 @@ export default function PredictPage() {
 
       // Set the prediction based on the API response
       const probability = Math.round(data.prediction * 100)
-      let confidence = "Low"
-      if (probability > 80 || probability < 20) {
-        confidence = "High"
-      } else if (probability > 65 || probability < 35) {
-        confidence = "Medium"
-      }
 
       setPrediction({
-        willRain: data.prediction > 0.5, // Assuming the API returns a probability
+        willRain: data.prediction > 0.5,
         probability: probability,
-        confidence: confidence,
-        annualRainfall: data.regional_info?.calculated_annual_rainfall || annualRainfall,
+        confidence: data.confidence || "Medium",
+        annualRainfall: data.regional_info?.avg_annual_rainfall || annualRainfall,
       })
 
       toast({
@@ -384,41 +468,18 @@ export default function PredictPage() {
 
   // Helper function to get rainfall likelihood based on region and season
   const getRainfallLikelihood = (subdivision: string, season: string) => {
-    // High rainfall regions during monsoon
-    const highRainfallRegions = [
-      "KERALA",
-      "COASTAL KARNATAKA",
-      "KONKAN & GOA",
-      "ASSAM & MEGHALAYA",
-      "NAGA MANI MIZO TRIPURA",
-    ]
+    if (!regionalData) return "unknown"
 
-    // Northeast monsoon regions
-    const northeastMonsoonRegions = ["TAMIL NADU", "COASTAL ANDHRA PRADESH"]
+    const probability = regionalData.rain_probability
 
-    if (highRainfallRegions.includes(subdivision) && season === "MONSOON") {
-      return "very high"
-    } else if (northeastMonsoonRegions.includes(subdivision) && season === "AUTUMN") {
-      return "high"
-    } else if (["WEST RAJASTHAN", "SAURASHTRA & KUTCH"].includes(subdivision)) {
-      return "low"
-    } else if (season === "MONSOON") {
-      return "moderate to high"
-    } else if (season === "WINTER") {
-      return "low"
-    } else {
-      return "moderate"
-    }
+    if (probability > 0.7) return "very high"
+    if (probability > 0.5) return "high"
+    if (probability > 0.3) return "moderate"
+    if (probability > 0.1) return "low"
+    return "very low"
   }
 
   const rainfallLikelihood = getRainfallLikelihood(form.watch("subdivision"), form.watch("season"))
-
-  // Update monthly rainfall defaults when subdivision changes
-  React.useEffect(() => {
-    const defaultValues = getDefaultMonthlyRainfall(currentSubdivision)
-    form.setValue("monthlyRainfall", defaultValues)
-    calculateAnnualRainfall()
-  }, [currentSubdivision])
 
   return (
     <div className="container max-w-6xl py-10">
@@ -426,6 +487,26 @@ export default function PredictPage() {
         <CloudRain className="h-6 w-6 text-sky-500" />
         <h1 className="text-3xl font-bold">Rainfall Prediction</h1>
       </div>
+
+      {backendStatus?.status === "error" && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Backend Connection Issue</AlertTitle>
+          <AlertDescription>
+            <p>{backendStatus.message}</p>
+            {backendStatus.tip && <p className="mt-2">{backendStatus.tip}</p>}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={checkBackendStatus}
+              disabled={isCheckingBackend}
+            >
+              {isCheckingBackend ? "Checking..." : "Retry Connection"}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-8 md:grid-cols-2">
         <div className="space-y-6">
@@ -595,20 +676,25 @@ export default function PredictPage() {
                         <p className="text-sm text-muted-foreground">
                           <strong>Subdivision:</strong> {form.watch("subdivision")}
                         </p>
+
+                        {isLoadingRegionalData ? (
+                          <p className="text-sm text-muted-foreground mt-2">Loading regional data...</p>
+                        ) : regionalData ? (
+                          <div className="mt-2">
+                            <p className="text-sm text-muted-foreground">
+                              <strong>Average Annual Rainfall:</strong> {regionalData.avg_annual_rainfall.toFixed(1)} mm
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              <strong>Monsoon Contribution:</strong> {regionalData.monsoon_rainfall_pct.toFixed(1)}%
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="rounded-lg border p-4">
                         <h4 className="font-medium mb-2">Regional Rainfall Patterns</h4>
                         <p className="text-sm text-muted-foreground">
-                          {form.watch("subdivision") === "KERALA" &&
-                            "Kerala receives heavy rainfall during the Southwest Monsoon (June-September) with an average annual rainfall of 3000mm."}
-                          {form.watch("subdivision") === "TAMIL NADU" &&
-                            "Tamil Nadu receives most of its rainfall during the Northeast Monsoon (October-December) unlike most other parts of India."}
-                          {form.watch("subdivision") === "JAMMU & KASHMIR" &&
-                            "Jammu & Kashmir has varied rainfall patterns with heavy snowfall in winter and moderate rainfall during spring and summer."}
-                          {form.watch("subdivision") !== "KERALA" &&
-                            form.watch("subdivision") !== "TAMIL NADU" &&
-                            form.watch("subdivision") !== "JAMMU & KASHMIR" &&
+                          {regionalData?.seasonal_pattern ||
                             `${form.watch("subdivision")} has unique rainfall patterns influenced by its geographical location and seasonal variations.`}
                         </p>
                       </div>
@@ -643,14 +729,10 @@ export default function PredictPage() {
                             <Input
                               type="number"
                               step="0.1"
-                              value={
-                                Number(
-                                  form.watch(`monthlyRainfall.${month.value}` as keyof z.infer<typeof formSchema>) || 0
-                                )
-                              }
+                              value={form.watch(`monthlyRainfall.${month.value}`) || 0}
                               onChange={(e) => {
                                 form.setValue(
-                                  `monthlyRainfall.${month.value}` as keyof z.infer<typeof formSchema>,
+                                  `monthlyRainfall.${month.value}`,
                                   e.target.value ? Number.parseFloat(e.target.value) : 0,
                                 )
                                 calculateAnnualRainfall()
@@ -672,13 +754,13 @@ export default function PredictPage() {
                         </p>
                         <div className="h-20 flex items-end gap-1">
                           {MONTHS.map((month) => {
-                            const value = form.watch(`monthlyRainfall.${month.value}` as keyof z.infer<typeof formSchema>) || 0
+                            const value = form.watch(`monthlyRainfall.${month.value}`) || 0
                             const maxValue = Math.max(
                               ...(Object.values(form.watch("monthlyRainfall") || {}).filter(
-                                (v): v is number => typeof v === "number" && !isNaN(v),
-                              )),
+                                (v) => v !== undefined && !isNaN(v),
+                              ) as number[]),
                             )
-                            const height = maxValue > 0 ? (Number(value) / maxValue) * 100 : 0
+                            const height = maxValue > 0 ? (value / maxValue) * 100 : 0
                             return (
                               <div key={month.value} className="flex-1 flex flex-col items-center">
                                 <div className="w-full bg-sky-500 rounded-t" style={{ height: `${height}%` }}></div>
@@ -690,7 +772,7 @@ export default function PredictPage() {
                       </div>
                     </TabsContent>
 
-                    <Button type="submit" className="w-full" disabled={isLoading}>
+                    <Button type="submit" className="w-full" disabled={isLoading || backendStatus?.status === "error"}>
                       {isLoading ? "Calculating..." : "Predict Rainfall"}
                     </Button>
                   </form>
@@ -722,8 +804,8 @@ export default function PredictPage() {
                       >
                         <div className="text-xs font-medium">{season.label.split(" ")[0]}</div>
                         <div className="mt-1 text-2xl font-bold text-sky-600 dark:text-sky-400">
-                          {season.value === "MONSOON"
-                            ? "40%"
+                          {rainfallStats && season.value === "MONSOON"
+                            ? `${Math.round(rainfallStats.monsoon_contribution)}%`
                             : season.value === "WINTER"
                               ? "3%"
                               : season.value === "SUMMER"
@@ -743,17 +825,13 @@ export default function PredictPage() {
                     <strong>Did you know?</strong> India receives about 80% of its annual rainfall during the monsoon
                     season (June to September).
                   </p>
-                  <p>
-                    The selected region ({form.watch("subdivision")}) typically experiences{" "}
-                    {form.watch("subdivision") === "KERALA" ||
-                    form.watch("subdivision") === "COASTAL KARNATAKA" ||
-                    form.watch("subdivision") === "KONKAN & GOA"
-                      ? "very heavy"
-                      : form.watch("subdivision") === "RAJASTHAN" || form.watch("subdivision") === "WEST RAJASTHAN"
-                        ? "very light"
-                        : "moderate"}{" "}
-                    rainfall compared to other regions of India.
-                  </p>
+                  {rainfallStats && (
+                    <p>
+                      The wettest month across India is typically <strong>{rainfallStats.wettest_month}</strong> and the
+                      driest is <strong>{rainfallStats.driest_month}</strong>. The average annual rainfall across India
+                      is <strong>{rainfallStats.avg_annual_rainfall.toFixed(1)} mm</strong>.
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -816,7 +894,7 @@ export default function PredictPage() {
                       </div>
                       <div className="text-3xl font-bold text-sky-600">{prediction.annualRainfall.toFixed(1)} mm</div>
                       <p className="text-sm text-muted-foreground mt-1">
-                        Total annual rainfall for {form.watch("subdivision")}
+                        Average annual rainfall for {form.watch("subdivision")}
                       </p>
                     </div>
                   )}
