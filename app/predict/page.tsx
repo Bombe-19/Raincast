@@ -144,21 +144,45 @@ const formSchema = z.object({
 
 // Define types for rainfall statistics and regional data
 interface RainfallStats {
-  avg_annual_rainfall: number
-  max_annual_rainfall: number
-  min_annual_rainfall: number
-  monsoon_contribution: number
-  rain_probability: number
-  wettest_month: string
-  driest_month: string
+  total_records?: number
+  time_period?: {
+    start_year?: number
+    end_year?: number
+  }
+  overall_stats?: {
+    mean_annual_rainfall?: number
+    max_annual_rainfall?: number
+    min_annual_rainfall?: number
+    std_annual_rainfall?: number
+  }
+  seasonal_stats?: {
+    winter?: number
+    pre_monsoon?: number
+    monsoon?: number
+    post_monsoon?: number
+  }
+  subdivisions?: string[]
+  // Legacy fields for backward compatibility
+  avg_annual_rainfall?: number
+  max_annual_rainfall?: number
+  min_annual_rainfall?: number
+  monsoon_contribution?: number
+  rain_probability?: number
+  wettest_month?: string
+  driest_month?: string
 }
 
 interface RegionalData {
+  subdivision?: string
   avg_annual_rainfall: number
   monsoon_rainfall_pct: number
   rain_probability: number
   monthly_averages: Record<string, number>
   seasonal_pattern: string
+  historical_data?: Array<{
+    year: number
+    annual_rainfall: number
+  }>
 }
 
 interface BackendStatus {
@@ -385,11 +409,11 @@ export default function PredictPage() {
         })
       }
 
-      // Calculate seasonal aggregates with hyphens as expected by the model
-      payload["Jan-Feb"] = (payload.JAN || 0) + (payload.FEB || 0)
-      payload["Mar-May"] = (payload.MAR || 0) + (payload.APR || 0) + (payload.MAY || 0)
-      payload["Jun-Sep"] = (payload.JUN || 0) + (payload.JUL || 0) + (payload.AUG || 0) + (payload.SEP || 0)
-      payload["Oct-Dec"] = (payload.OCT || 0) + (payload.NOV || 0) + (payload.DEC || 0)
+      // Calculate seasonal aggregates with underscores as expected by the updated model
+      payload["Jan_Feb"] = (payload.JAN || 0) + (payload.FEB || 0)
+      payload["Mar_May"] = (payload.MAR || 0) + (payload.APR || 0) + (payload.MAY || 0)
+      payload["Jun_Sep"] = (payload.JUN || 0) + (payload.JUL || 0) + (payload.AUG || 0) + (payload.SEP || 0)
+      payload["Oct_Dec"] = (payload.OCT || 0) + (payload.NOV || 0) + (payload.DEC || 0)
 
       // Set all seasons to 0 first
       payload.SPRING = 0
@@ -480,6 +504,82 @@ export default function PredictPage() {
   }
 
   const rainfallLikelihood = getRainfallLikelihood(form.watch("subdivision"), form.watch("season"))
+
+  // Helper function to get the wettest month from rainfall stats
+  const getWettestMonth = () => {
+    if (!rainfallStats) return "July"
+
+    // Check if we have the new format with seasonal_stats
+    if (rainfallStats.wettest_month) {
+      return rainfallStats.wettest_month
+    }
+
+    // Otherwise, determine from monthly averages in regional data
+    if (regionalData?.monthly_averages) {
+      const months = Object.entries(regionalData.monthly_averages)
+      if (months.length > 0) {
+        const wettest = months.reduce((max, current) => (current[1] > max[1] ? current : max))
+        return wettest[0]
+      }
+    }
+
+    return "July" // Default
+  }
+
+  // Helper function to get the driest month from rainfall stats
+  const getDriestMonth = () => {
+    if (!rainfallStats) return "January"
+
+    // Check if we have the old format
+    if (rainfallStats.driest_month) {
+      return rainfallStats.driest_month
+    }
+
+    // Otherwise, determine from monthly averages in regional data
+    if (regionalData?.monthly_averages) {
+      const months = Object.entries(regionalData.monthly_averages)
+      if (months.length > 0) {
+        const driest = months.reduce((min, current) => (current[1] < min[1] ? current : min))
+        return driest[0]
+      }
+    }
+
+    return "January" // Default
+  }
+
+  // Helper function to get average annual rainfall
+  const getAvgAnnualRainfall = () => {
+    if (!rainfallStats) return 0
+
+    // Check if we have the new format
+    if (rainfallStats.overall_stats?.mean_annual_rainfall !== undefined) {
+      return rainfallStats.overall_stats.mean_annual_rainfall
+    }
+
+    // Check if we have the old format
+    if (rainfallStats.avg_annual_rainfall !== undefined) {
+      return rainfallStats.avg_annual_rainfall
+    }
+
+    return 0
+  }
+
+  // Helper function to get monsoon contribution percentage
+  const getMonsoonContribution = () => {
+    if (!rainfallStats) return 80
+
+    // Check if we have the new format
+    if (rainfallStats.seasonal_stats?.monsoon !== undefined && getAvgAnnualRainfall() > 0) {
+      return (rainfallStats.seasonal_stats.monsoon / getAvgAnnualRainfall()) * 100
+    }
+
+    // Check if we have the old format
+    if (rainfallStats.monsoon_contribution !== undefined) {
+      return rainfallStats.monsoon_contribution
+    }
+
+    return 80 // Default value
+  }
 
   return (
     <div className="container max-w-6xl py-10">
@@ -687,6 +787,12 @@ export default function PredictPage() {
                             <p className="text-sm text-muted-foreground">
                               <strong>Monsoon Contribution:</strong> {regionalData.monsoon_rainfall_pct.toFixed(1)}%
                             </p>
+                            {regionalData.historical_data && regionalData.historical_data.length > 0 && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                <strong>Historical Data:</strong> Available for {regionalData.historical_data.length}{" "}
+                                years
+                              </p>
+                            )}
                           </div>
                         ) : null}
                       </div>
@@ -804,8 +910,8 @@ export default function PredictPage() {
                       >
                         <div className="text-xs font-medium">{season.label.split(" ")[0]}</div>
                         <div className="mt-1 text-2xl font-bold text-sky-600 dark:text-sky-400">
-                          {rainfallStats && season.value === "MONSOON"
-                            ? `${Math.round(rainfallStats.monsoon_contribution)}%`
+                          {season.value === "MONSOON"
+                            ? `${Math.round(getMonsoonContribution())}%`
                             : season.value === "WINTER"
                               ? "3%"
                               : season.value === "SUMMER"
@@ -827,9 +933,9 @@ export default function PredictPage() {
                   </p>
                   {rainfallStats && (
                     <p>
-                      The wettest month across India is typically <strong>{rainfallStats.wettest_month}</strong> and the
-                      driest is <strong>{rainfallStats.driest_month}</strong>. The average annual rainfall across India
-                      is <strong>{rainfallStats?.avg_annual_rainfall?.toFixed(1) || "N/A"} mm</strong>.
+                      The wettest month across India is typically <strong>{getWettestMonth()}</strong> and the driest is{" "}
+                      <strong>{getDriestMonth()}</strong>. The average annual rainfall across India is{" "}
+                      <strong>{getAvgAnnualRainfall().toFixed(1)} mm</strong>.
                     </p>
                   )}
                 </div>

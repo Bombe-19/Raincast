@@ -321,24 +321,49 @@ def get_regional_data(subdivision):
             subdivision_data = df[df[col_name] == 1]
         else:
             print(f"Column {col_name} not found")
-            # Then try looking for the subdivision in the SUBDIVISION column
-            subdivision_data = df[df["SUBDIVISION"] == subdivision]
+            # Try to find a matching column
+            matching_cols = [col for col in df.columns if col.startswith("SUBDIVISION_") and subdivision in col]
+            if matching_cols:
+                print(f"Found matching column: {matching_cols[0]}")
+                subdivision_data = df[df[matching_cols[0]] == 1]
+            else:
+                print(f"No matching column found for {subdivision}")
+                return None
     else:
-        # No prefix - first try direct match with SUBDIVISION column
-        subdivision_data = df[df["SUBDIVISION"] == subdivision]
+        # No prefix - first check if SUBDIVISION column exists
+        if "SUBDIVISION" in df.columns:
+            subdivision_data = df[df["SUBDIVISION"] == subdivision]
+            if not subdivision_data.empty:
+                print(f"Found data using SUBDIVISION column for {subdivision}")
+            else:
+                print(f"No data found in SUBDIVISION column for {subdivision}")
+        else:
+            # SUBDIVISION column doesn't exist, try one-hot columns
+            print("SUBDIVISION column not found, trying one-hot columns")
+            subdivision_data = pd.DataFrame()
         
-        # If that doesn't work, try finding the corresponding one-hot column
+        # If no data found or SUBDIVISION column doesn't exist, try finding the corresponding one-hot column
         if subdivision_data.empty:
             col_name = f"SUBDIVISION_{subdivision}"
             if col_name in df.columns:
                 print(f"Using one-hot column: {col_name}")
                 subdivision_data = df[df[col_name] == 1]
+            else:
+                # Try to find a matching column
+                matching_cols = [col for col in df.columns if col.startswith("SUBDIVISION_") and subdivision in col]
+                if matching_cols:
+                    print(f"Found matching column: {matching_cols[0]}")
+                    subdivision_data = df[df[matching_cols[0]] == 1]
+                else:
+                    print(f"No matching column found for {subdivision}")
+                    return None
     
     if subdivision_data.empty:
         print(f"No data found for subdivision: {subdivision}")
         # Print available subdivisions for debugging
         print(f"Available one-hot columns: {[col for col in df.columns if col.startswith('SUBDIVISION_')]}")
-        print(f"Available subdivisions: {df['SUBDIVISION'].unique().tolist() if 'SUBDIVISION' in df.columns else []}")
+        if "SUBDIVISION" in df.columns:
+            print(f"Available subdivisions: {df['SUBDIVISION'].unique().tolist()}")
         return None
     
     print(f"Found {len(subdivision_data)} records for subdivision: {subdivision}")
@@ -367,21 +392,29 @@ def get_regional_data(subdivision):
         seasonal_pattern = f"No monthly data available for {subdivision}."
     
     # Calculate additional statistics
+    annual_rainfall = float(subdivision_data['ANNUAL'].mean()) if 'ANNUAL' in subdivision_data.columns else 0
+    
+    # Calculate monsoon contribution percentage
+    monsoon_rainfall_pct = 0
+    if 'Jun_Sep' in subdivision_data.columns and annual_rainfall > 0:
+        monsoon_rainfall_pct = float((subdivision_data['Jun_Sep'].mean() / annual_rainfall) * 100)
+    
+    # Get rain probability
+    rain_probability = float(subdivision_data['PredictedRainTomorrow'].mean()) if 'PredictedRainTomorrow' in subdivision_data.columns else 0
+    
     regional_data = {
         'subdivision': subdivision,
-        'avg_annual_rainfall': float(subdivision_data['ANNUAL'].mean()) if 'ANNUAL' in subdivision_data.columns else 0,
-        'monsoon_rainfall_pct': float((subdivision_data['Jun_Sep'].mean() / subdivision_data['ANNUAL'].mean()) * 100) 
-                               if ('Jun_Sep' in subdivision_data.columns and 'ANNUAL' in subdivision_data.columns and subdivision_data['ANNUAL'].mean() > 0) 
-                               else 0,
-        'rain_probability': float(subdivision_data['PredictedRainTomorrow'].mean()) if 'PredictedRainTomorrow' in subdivision_data.columns else 0,
+        'avg_annual_rainfall': annual_rainfall,
+        'monsoon_rainfall_pct': monsoon_rainfall_pct,
+        'rain_probability': rain_probability,
         'monthly_averages': monthly_averages,
         'seasonal_pattern': seasonal_pattern
     }
     
     # Get historical data for the recent years
     if 'YEAR' in subdivision_data.columns and 'ANNUAL' in subdivision_data.columns:
-        recent_years = subdivision_data['YEAR'].unique().tolist() if 'YEAR' in subdivision_data.columns else []
-        recent_years = [year for year in recent_years if 1901 <= year <= 2015]
+        recent_years = subdivision_data['YEAR'].unique().tolist()
+        recent_years = [year for year in recent_years if 1901 <= year <= 2023]
         historical_data = []
         
         for year in recent_years:
