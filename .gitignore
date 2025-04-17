@@ -40,7 +40,8 @@ rainfall-api/models/*.joblib
 *.joblib
 
 # Data files
-*.csv
+rain_predictions(1).csv
+rain_predictions2.csv
 *.xlsx
 *.parquet
 *.feather
